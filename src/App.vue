@@ -606,11 +606,14 @@ onBeforeUnmount(() => {
     <main class="window-panel">
       <header class="header-bar">
         <div class="header-left">
-          <button class="info-btn" type="button" aria-label="打开说明" @click="showInfoPanel = true">i</button>
+          <div class="brand-mark" aria-hidden="true">
+            <img src="/port-manager-icon.png" alt="" />
+          </div>
           <div class="title-block">
             <h1>Port Manager</h1>
             <p>本地端口管理与诊断</p>
           </div>
+          <button class="info-btn" type="button" aria-label="打开说明" @click="showInfoPanel = true">i</button>
         </div>
 
         <span v-if="activeView === 'query'" class="status-chip" :class="portResult?.occupied ? 'status-busy' : 'status-free'">

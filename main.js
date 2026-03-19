@@ -15,7 +15,7 @@ const os = require('os');
 const path = require('path');
 const { exec } = require('child_process');
 
-const DEV_SERVER_URL = 'http://127.0.0.1:5173';
+const DEV_SERVER_URL = 'http://127.0.0.1:39217';
 const IPC_CHANNELS = {
   COPY_TEXT: 'system:copy-text',
   EXPORT_REPORT: 'system:export-report',
@@ -68,6 +68,18 @@ let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 
+function getIconFilePath() {
+  if (process.platform === 'win32') {
+    return path.join(__dirname, 'public', 'port-manager-icon.ico');
+  }
+
+  return path.join(__dirname, 'public', 'port-manager-icon.png');
+}
+
+function createAppIcon() {
+  return nativeImage.createFromPath(getIconFilePath());
+}
+
 function createWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     return mainWindow;
@@ -79,6 +91,7 @@ function createWindow() {
     minWidth: 860,
     minHeight: 620,
     backgroundColor: '#e8edf4',
+    icon: getIconFilePath(),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -88,6 +101,7 @@ function createWindow() {
   });
 
   mainWindow.removeMenu();
+  mainWindow.setIcon(createAppIcon());
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show();
@@ -117,16 +131,7 @@ function createWindow() {
 }
 
 function createTrayIcon() {
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-      <rect x="8" y="8" width="48" height="48" rx="14" fill="#2f6df6"/>
-      <path d="M22 34h20M22 24h20M22 44h12" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
-    </svg>
-  `;
-
-  return nativeImage
-    .createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`)
-    .resize({ width: 16, height: 16 });
+  return getIconFilePath();
 }
 
 function showMainWindow() {
@@ -707,6 +712,8 @@ function registerIpcHandlers() {
 }
 
 app.whenReady().then(() => {
+  app.setAppUserModelId('cc.port-manager');
+  app.setName('Port Manager');
   registerIpcHandlers();
   createTray();
   createWindow();
