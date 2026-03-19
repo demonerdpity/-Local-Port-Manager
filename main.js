@@ -11,17 +11,20 @@ const IPC_CHANNELS = {
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
-    width: 1180,
-    height: 780,
-    minWidth: 980,
-    minHeight: 680,
-    backgroundColor: '#0f1722',
+    width: 880,
+    height: 640,
+    minWidth: 760,
+    minHeight: 560,
+    backgroundColor: '#e8edf4',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+
+  // Desktop tool style: remove the default menu row on Windows to keep the window compact.
+  mainWindow.removeMenu();
 
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL(DEV_SERVER_URL);
@@ -84,6 +87,10 @@ function extractPortFromAddress(address) {
   return match ? Number(match[1]) : null;
 }
 
+function detectAddressFamily(address) {
+  return String(address).includes('[') ? 'IPv6' : 'IPv4';
+}
+
 function parseNetstatOutput(output, targetPort) {
   const records = [];
   const lines = output.split(/\r?\n/);
@@ -105,6 +112,7 @@ function parseNetstatOutput(output, targetPort) {
       if (localPort === targetPort) {
         records.push({
           protocol,
+          addressFamily: detectAddressFamily(localAddress),
           localAddress,
           foreignAddress,
           state,
@@ -120,6 +128,7 @@ function parseNetstatOutput(output, targetPort) {
       if (localPort === targetPort) {
         records.push({
           protocol,
+          addressFamily: detectAddressFamily(localAddress),
           localAddress,
           foreignAddress,
           state: 'LISTENING',
@@ -191,16 +200,8 @@ async function getProcessDetails(pid) {
 async function getPortInfo(port) {
   ensureWindows();
   const normalizedPort = normalizePort(port);
-
-  const [tcpResult, udpResult] = await Promise.all([
-    runCommand('netstat -ano -p tcp'),
-    runCommand('netstat -ano -p udp'),
-  ]);
-
-  const records = [
-    ...parseNetstatOutput(tcpResult.stdout, normalizedPort),
-    ...parseNetstatOutput(udpResult.stdout, normalizedPort),
-  ];
+  const { stdout } = await runCommand('netstat -ano');
+  const records = parseNetstatOutput(stdout, normalizedPort);
 
   return {
     success: true,

@@ -3,13 +3,13 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 const desktopApi = window.api || {
   async getPortInfo() {
-    throw new Error('Electron preload API is unavailable. Start the app with npm run dev or npm start.');
+    throw new Error('未检测到 Electron 预加载 API，请使用 npm run dev 或 npm start 启动应用。');
   },
   async getProcessInfo() {
-    throw new Error('Electron preload API is unavailable. Start the app with npm run dev or npm start.');
+    throw new Error('未检测到 Electron 预加载 API，请使用 npm run dev 或 npm start 启动应用。');
   },
   async killProcess() {
-    throw new Error('Electron preload API is unavailable. Start the app with npm run dev or npm start.');
+    throw new Error('未检测到 Electron 预加载 API，请使用 npm run dev 或 npm start 启动应用。');
   },
 };
 
@@ -17,6 +17,7 @@ const quickPorts = [3000, 5173, 8080, 8000, 3306, 6379];
 const portInput = ref('8080');
 const lastQueriedPort = ref('');
 const autoRefresh = ref(false);
+const showInfoPanel = ref(false);
 const isLoading = ref(false);
 const isKilling = ref(false);
 const errorMessage = ref('');
@@ -29,12 +30,32 @@ let refreshTimer = null;
 const primaryRecord = computed(() => portResult.value?.primaryRecord || null);
 const canRefresh = computed(() => Boolean(lastQueriedPort.value) && !isLoading.value);
 const canKill = computed(() => Boolean(primaryRecord.value?.pid) && !isKilling.value);
+const statusText = computed(() => {
+  if (!portResult.value) {
+    return '待查询';
+  }
+
+  return portResult.value.occupied ? '占用中' : '空闲';
+});
+
+const displayPort = computed(() => portResult.value?.port || lastQueriedPort.value || '--');
+const processName = computed(() => {
+  if (processResult.value?.processName) {
+    return processResult.value.processName;
+  }
+
+  if (portResult.value?.occupied) {
+    return '未获取';
+  }
+
+  return '--';
+});
 
 async function lookupPort(port = portInput.value) {
   const value = String(port).trim();
 
   if (!value) {
-    errorMessage.value = 'Please enter a port number.';
+    errorMessage.value = '请输入端口号。';
     return;
   }
 
@@ -48,7 +69,7 @@ async function lookupPort(port = portInput.value) {
     if (!result.success) {
       portResult.value = null;
       processResult.value = null;
-      errorMessage.value = result.message || 'Failed to inspect the selected port.';
+      errorMessage.value = result.message || '端口查询失败。';
       return;
     }
 
@@ -62,11 +83,11 @@ async function lookupPort(port = portInput.value) {
       if (processInfo.success) {
         processResult.value = processInfo;
       } else {
-        feedbackMessage.value = processInfo.message || 'Process details are not available.';
+        feedbackMessage.value = processInfo.message || '未能获取进程详细信息。';
       }
     }
   } catch (error) {
-    errorMessage.value = error.message || 'Unexpected error while querying the port.';
+    errorMessage.value = error.message || '查询端口时发生异常。';
   } finally {
     isLoading.value = false;
   }
@@ -98,14 +119,14 @@ async function killCurrentProcess() {
     const result = await desktopApi.killProcess(primaryRecord.value.pid);
 
     if (!result.success) {
-      errorMessage.value = result.message || 'Failed to terminate the process.';
+      errorMessage.value = result.message || '结束进程失败。';
       return;
     }
 
-    feedbackMessage.value = result.message || 'Process terminated.';
+    feedbackMessage.value = result.message || '进程已结束。';
     await lookupPort(lastQueriedPort.value || portInput.value);
   } catch (error) {
-    errorMessage.value = error.message || 'Unexpected error while killing the process.';
+    errorMessage.value = error.message || '结束进程时发生异常。';
   } finally {
     isKilling.value = false;
   }
@@ -137,22 +158,24 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="app-shell">
-    <div class="orb orb-left"></div>
-    <div class="orb orb-right"></div>
+    <main class="window-panel">
+      <header class="header-bar">
+        <div class="header-left">
+          <button class="info-btn" type="button" aria-label="打开说明" @click="showInfoPanel = true">i</button>
+          <div class="title-block">
+            <h1>Port Manager</h1>
+            <p>本地端口管理</p>
+          </div>
+        </div>
 
-    <main class="dashboard">
-      <section class="hero">
-        <p class="eyebrow">Desktop Port Inspector</p>
-        <h1>Port Manager</h1>
-        <p class="hero-copy">
-          Inspect local port usage, resolve the owning process, and terminate it without falling back to
-          netstat or taskkill in a terminal.
-        </p>
-      </section>
+        <span class="status-chip" :class="portResult?.occupied ? 'status-busy' : 'status-free'">
+          {{ statusText }}
+        </span>
+      </header>
 
-      <section class="controls">
-        <label class="field">
-          <span class="field-label">Port</span>
+      <section class="query-panel">
+        <label class="field field-port">
+          <span class="field-label">端口</span>
           <input
             v-model="portInput"
             class="port-input"
@@ -164,18 +187,18 @@ onBeforeUnmount(() => {
           />
         </label>
 
-        <button class="primary-btn" :disabled="isLoading" @click="lookupPort()">
-          {{ isLoading ? 'Searching...' : 'Query Port' }}
+        <button class="primary-btn" type="button" :disabled="isLoading" @click="lookupPort()">
+          {{ isLoading ? '查询中...' : '查询' }}
         </button>
 
-        <button class="ghost-btn" :disabled="!canRefresh" @click="refreshCurrentPort">
-          Refresh
+        <button class="ghost-btn" type="button" :disabled="!canRefresh" @click="refreshCurrentPort">
+          刷新
         </button>
       </section>
 
-      <section class="shortcut-bar">
+      <section class="toolbar-row">
         <div class="shortcut-group">
-          <span class="shortcut-label">Quick Ports</span>
+          <span class="field-label">常用端口</span>
           <button
             v-for="port in quickPorts"
             :key="port"
@@ -189,37 +212,37 @@ onBeforeUnmount(() => {
 
         <label class="toggle">
           <input v-model="autoRefresh" type="checkbox" />
-          <span>Auto refresh every 2 seconds</span>
+          <span>每 2 秒自动刷新</span>
         </label>
       </section>
 
       <p v-if="errorMessage" class="message error-message">{{ errorMessage }}</p>
       <p v-else-if="feedbackMessage" class="message success-message">{{ feedbackMessage }}</p>
 
-      <section v-if="portResult" class="result-grid">
+      <section class="result-grid">
         <article class="card">
-          <div class="card-header">
+          <div class="card-head">
             <div>
-              <p class="card-label">Port Summary</p>
-              <h2>{{ portResult.port }}</h2>
+              <p class="card-label">端口状态</p>
+              <h2>{{ displayPort }}</h2>
             </div>
 
-            <span class="status-pill" :class="portResult.occupied ? 'status-busy' : 'status-free'">
-              {{ portResult.occupied ? 'Occupied' : 'Free' }}
+            <span class="mini-tag">
+              {{ portResult ? (portResult.occupied ? '已占用' : '可用') : '未查询' }}
             </span>
           </div>
 
-          <div class="stats-grid">
+          <div class="info-grid">
             <div class="stat-box">
-              <span>Status</span>
-              <strong>{{ portResult.occupied ? 'In Use' : 'Available' }}</strong>
+              <span>状态</span>
+              <strong>{{ portResult ? (portResult.occupied ? '占用中' : '空闲') : '--' }}</strong>
             </div>
             <div class="stat-box">
-              <span>Protocol</span>
-              <strong>{{ primaryRecord?.protocol || '--' }}</strong>
+              <span>协议</span>
+              <strong>{{ primaryRecord ? `${primaryRecord.protocol} / ${primaryRecord.addressFamily}` : '--' }}</strong>
             </div>
             <div class="stat-box">
-              <span>Local Address</span>
+              <span>本地地址</span>
               <strong>{{ primaryRecord?.localAddress || '--' }}</strong>
             </div>
             <div class="stat-box">
@@ -227,16 +250,17 @@ onBeforeUnmount(() => {
               <strong>{{ primaryRecord?.pid || '--' }}</strong>
             </div>
             <div class="stat-box">
-              <span>Process Name</span>
-              <strong>{{ processResult?.processName || '--' }}</strong>
+              <span>进程名</span>
+              <strong>{{ processName }}</strong>
             </div>
           </div>
 
-          <div v-if="portResult.records?.length" class="record-list">
+          <div v-if="portResult?.records?.length" class="record-list">
             <div class="record-row record-head">
-              <span>Protocol</span>
-              <span>Local Address</span>
-              <span>State</span>
+              <span>协议</span>
+              <span>网络</span>
+              <span>本地地址</span>
+              <span>状态</span>
               <span>PID</span>
             </div>
 
@@ -246,42 +270,54 @@ onBeforeUnmount(() => {
               class="record-row"
             >
               <span>{{ record.protocol }}</span>
+              <span>{{ record.addressFamily }}</span>
               <span>{{ record.localAddress }}</span>
               <span>{{ record.state }}</span>
               <span>{{ record.pid }}</span>
             </div>
           </div>
 
-          <p v-else class="empty-copy">
-            No matching listener or socket was found for this local port.
-          </p>
+          <p v-else class="empty-copy">当前没有匹配到该端口的监听或连接记录。</p>
         </article>
 
         <article class="card">
-          <div class="card-header">
+          <div class="card-head">
             <div>
-              <p class="card-label">Process Details</p>
-              <h2>{{ processResult?.processName || (portResult.occupied ? 'Unavailable' : 'No Owner') }}</h2>
+              <p class="card-label">进程信息</p>
+              <h2>{{ processName }}</h2>
             </div>
 
-            <button class="danger-btn" :disabled="!canKill" @click="killCurrentProcess">
-              {{ isKilling ? 'Killing...' : 'Kill Process' }}
+            <button class="danger-btn" type="button" :disabled="!canKill" @click="killCurrentProcess">
+              {{ isKilling ? '结束中...' : '结束进程' }}
             </button>
           </div>
 
           <div class="detail-stack">
             <div class="detail-block">
-              <span>Executable Path</span>
-              <code>{{ processResult?.executablePath || 'Unavailable or restricted by the system.' }}</code>
+              <span>可执行路径</span>
+              <code>{{ processResult?.executablePath || '系统未返回，或当前权限不足。' }}</code>
             </div>
 
             <div class="detail-block">
-              <span>Command Line</span>
-              <code>{{ processResult?.commandLine || 'Unavailable or restricted by the system.' }}</code>
+              <span>命令行</span>
+              <code>{{ processResult?.commandLine || '系统未返回，或当前权限不足。' }}</code>
             </div>
           </div>
         </article>
       </section>
+
+      <div v-if="showInfoPanel" class="info-overlay" @click.self="showInfoPanel = false">
+        <section class="info-panel">
+          <div class="info-head">
+            <h3>Information</h3>
+            <button class="close-btn" type="button" @click="showInfoPanel = false">关闭</button>
+          </div>
+
+          <p>这个工具用于快速查看本机端口占用情况，并定位对应的进程。</p>
+          <p>你可以输入端口或点击常用端口，查看协议、本地地址、PID、进程名等信息。</p>
+          <p>如果端口被占用，还可以直接结束该进程；打开自动刷新后，会每 2 秒刷新一次当前端口状态。</p>
+        </section>
+      </div>
     </main>
   </div>
 </template>
